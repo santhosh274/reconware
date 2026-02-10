@@ -1,0 +1,13 @@
+@echo off
+set "OUTPUT_FILE=folder_structure.txt"
+
+echo Generating folder structure... Please wait.
+
+:: The 'tree' command does the heavy lifting
+:: /f includes filenames, /a uses text characters for the lines (better for compatibility)
+echo Folder Structure for: %CD% > "%OUTPUT_FILE%"
+echo ============================================ >> "%OUTPUT_FILE%"
+tree /f /a >> "%OUTPUT_FILE%"
+
+echo Done! Structure saved to %OUTPUT_FILE%.
+start notepad "%OUTPUT_FILE%"

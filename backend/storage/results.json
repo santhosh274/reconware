@@ -1,0 +1,33 @@
+{
+  "timestamp": 1770731321.70152,
+  "files": [
+    {
+      "filename": "14.139.161.31_Archive [26-02-08 19-16-50].har.enc",
+      "full_path": "D:\\script\\miniproject\\backend-init\\ransomeware-caution\\lab_test_data\\14.139.161.31_Archive [26-02-08 19-16-50].har.enc",
+      "entropy": 8.0,
+      "prediction": "ransomware",
+      "blocked": true
+    },
+    {
+      "filename": "IT49_BDA2-1.pdf.enc",
+      "full_path": "D:\\script\\miniproject\\backend-init\\ransomeware-caution\\lab_test_data\\IT49_BDA2-1.pdf.enc",
+      "entropy": 8.0,
+      "prediction": "ransomware",
+      "blocked": true
+    },
+    {
+      "filename": "test.exe",
+      "full_path": "D:\\script\\miniproject\\backend-init\\ransomeware-caution\\lab_test_data\\test.exe",
+      "entropy": 7.99,
+      "prediction": "benign",
+      "blocked": false
+    },
+    {
+      "filename": "Virtual Internship 2026.pdf",
+      "full_path": "D:\\script\\miniproject\\backend-init\\ransomeware-caution\\lab_test_data\\Virtual Internship 2026.pdf",
+      "entropy": 7.26,
+      "prediction": "benign",
+      "blocked": false
+    }
+  ]
+}

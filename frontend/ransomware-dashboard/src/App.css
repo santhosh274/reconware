@@ -1,0 +1,6 @@
+/* Base app styles are handled via Tailwind in index.css / Dashboard.
+   This file is intentionally minimal to avoid fighting the full-screen layout. */
+
+#root {
+  min-height: 100vh;
+}

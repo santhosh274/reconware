@@ -1,14 +1,29 @@
 import { z } from "zod";
 
+export const FindingSchema = z.object({
+    line: z.number().optional(),
+    code: z.string().optional(),
+    description: z.string(),
+    severity: z.number()
+});
+
 export const ScannedFileSchema = z.object({
-    path: z.string(),
+    filename: z.string(),
+    full_path: z.string(),
     entropy: z.number(),
-    score: z.number(),
-    prediction: z.enum(["benign", "ransomware"]),
+    prediction: z.number(), // 0 or 1
     blocked: z.boolean(),
+    risk_score: z.number().optional(),
+    risk_level: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW", "CLEARED", "UNKNOWN"]).optional(),
+    findings: z.array(FindingSchema).optional()
 });
 
 export const ScanResultSchema = z.object({
     timestamp: z.string().nullable(),
     files: z.array(ScannedFileSchema),
 });
+
+// Infer types
+export type Finding = z.infer<typeof FindingSchema>;
+export type ScannedFile = z.infer<typeof ScannedFileSchema>;
+export type ScanResult = z.infer<typeof ScanResultSchema>;

@@ -10,8 +10,12 @@ export default function ScanControls() {
   const handleScan = async () => {
     if (!path) return;
     try {
+      console.log("[ScanControls] Starting scan for path:", path);
       setIsScanning(true);
-      await scanFolder(path);
+      const response = await scanFolder(path);
+      console.log("[ScanControls] Scan completed successfully");
+    } catch (error) {
+      console.error("[ScanControls] Scan failed:", error);
     } finally {
       setIsScanning(false);
     }

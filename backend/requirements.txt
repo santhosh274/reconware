@@ -5,3 +5,4 @@ numpy
 joblib
 psutil
 scikit-learn
+watchdog>=4.0.1

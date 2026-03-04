@@ -1,0 +1,118 @@
+{
+  "quarantined_files": [
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\game\\Dockerfile",
+      "quarantine_path": "quarantine\\Dockerfile",
+      "timestamp": "2026-03-04T12:41:42.666816",
+      "filename": "Dockerfile"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\game\\hi.bat",
+      "quarantine_path": "quarantine\\hi.bat",
+      "timestamp": "2026-03-04T12:41:42.705650",
+      "filename": "hi.bat"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\game\\hi.txt",
+      "quarantine_path": "quarantine\\hi.txt",
+      "timestamp": "2026-03-04T12:41:42.742949",
+      "filename": "hi.txt"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\game\\index.html",
+      "quarantine_path": "quarantine\\index.html",
+      "timestamp": "2026-03-04T12:41:42.779230",
+      "filename": "index.html"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\game\\malware.enc",
+      "quarantine_path": "quarantine\\malware.enc",
+      "timestamp": "2026-03-04T12:41:42.817432",
+      "filename": "malware.enc"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\game\\ransomeware-caution\\key.enc",
+      "quarantine_path": "quarantine\\key.enc",
+      "timestamp": "2026-03-04T12:41:42.854217",
+      "filename": "key.enc"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\game\\ransomeware-caution\\test.py",
+      "quarantine_path": "quarantine\\test.py",
+      "timestamp": "2026-03-04T12:41:42.893268",
+      "filename": "test.py"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\game\\ransomeware-caution\\lab_test_data\\IT49_BDA2-1.pdf.enc",
+      "quarantine_path": "quarantine\\IT49_BDA2-1.pdf.enc",
+      "timestamp": "2026-03-04T12:41:42.933776",
+      "filename": "IT49_BDA2-1.pdf.enc"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\game\\ransomeware-caution\\lab_test_data\\srs_template-ieee.pdf.enc",
+      "quarantine_path": "quarantine\\srs_template-ieee.pdf.enc",
+      "timestamp": "2026-03-04T12:41:42.973603",
+      "filename": "srs_template-ieee.pdf.enc"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\ransomware-check\\ooohh.bat",
+      "quarantine_path": "quarantine\\ooohh.bat",
+      "timestamp": "2026-03-04T18:56:45.555360",
+      "filename": "ooohh.bat"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\ransomware-check\\ransomware damn.txt",
+      "quarantine_path": "quarantine\\ransomware damn.txt",
+      "timestamp": "2026-03-04T18:56:45.604223",
+      "filename": "ransomware damn.txt"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\ransomware-check\\hi guys.txt",
+      "quarantine_path": "quarantine\\hi guys.txt",
+      "timestamp": "2026-03-04T18:57:20.066451",
+      "filename": "hi guys.txt"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\ransomware-check\\hi.txt",
+      "quarantine_path": "quarantine\\hi_1.txt",
+      "timestamp": "2026-03-04T18:57:47.339812",
+      "filename": "hi.txt"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\ransomware-check\\WhatsApp Image 2026-03-03 at 10.38.11 AM.jpeg",
+      "quarantine_path": "quarantine\\WhatsApp Image 2026-03-03 at 10.38.11 AM.jpeg",
+      "timestamp": "2026-03-04T19:17:24.730534",
+      "filename": "WhatsApp Image 2026-03-03 at 10.38.11 AM.jpeg"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\ransomware-check\\image.bat",
+      "quarantine_path": "quarantine\\image.bat",
+      "timestamp": "2026-03-04T19:18:59.842237",
+      "filename": "image.bat"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\ransomware-check\\whole.bat",
+      "quarantine_path": "quarantine\\whole.bat",
+      "timestamp": "2026-03-04T19:19:29.669048",
+      "filename": "whole.bat"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\ransomware-check\\hi guys virus.txt",
+      "quarantine_path": "quarantine\\hi guys virus.txt",
+      "timestamp": "2026-03-04T19:20:12.130721",
+      "filename": "hi guys virus.txt"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\ransomware-check\\key.enc",
+      "quarantine_path": "quarantine\\key_1.enc",
+      "timestamp": "2026-03-04T19:28:10.417592",
+      "filename": "key.enc"
+    },
+    {
+      "original_path": "C:\\Users\\santh\\Documents\\vac\\ransomware-check\\virus hai.txt",
+      "quarantine_path": "quarantine\\virus hai.txt",
+      "timestamp": "2026-03-04T19:34:13.016288",
+      "filename": "virus hai.txt"
+    }
+  ]
+}

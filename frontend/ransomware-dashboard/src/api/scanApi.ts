@@ -5,44 +5,67 @@ const API = "http://localhost:8000";
 export const startScan = () =>
   axios.post(`${API}/scan`);
 
-export const scanFolder = async (path: string) =>
-  axios.post(`http://localhost:8000/scan?path=${encodeURIComponent(path)}`);
+export const scanFolder = async (path: string) => {
+  console.log("[Frontend] Starting scan of:", path);
+  try {
+    const response = await axios.post(`http://localhost:8000/scan?path=${encodeURIComponent(path)}`);
+    console.log("[Frontend] Scan response:", response.data);
+    return response;
+  } catch (error) {
+    console.error("[Frontend] Scan error:", error);
+    throw error;
+  }
+};
 
+export async function fetchQuarantinedFiles(): Promise<QuarantinedFile[]> {
+  const response = await fetch('/api/quarantine');
+  if (!response.ok) throw new Error('Failed to fetch quarantined files');
+  return response.json();
+}
+
+export async function restoreFromQuarantine(fileId: string): Promise<void> {
+  const response = await fetch(`/api/quarantine/${fileId}/restore`, {
+    method: 'POST',
+  });
+  if (!response.ok) throw new Error('Failed to restore file');
+}
+
+export async function deleteFromQuarantine(fileId: string): Promise<void> {
+  const response = await fetch(`/api/quarantine/${fileId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) throw new Error('Failed to delete file');
+}
 
 export const fetchResults = async () => {
+  console.log("[Frontend] Fetching scan results...");
   const res = await axios.get(`${API}/results`);
 
-  // Normalize backend shape into ScannedFile-based ScanResult
+  console.log("[Frontend] Raw API response:", res.data);
+
+  // Return the raw response - let components handle the new fields
   const raw = res.data;
   const files = Array.isArray(raw?.files) ? raw.files : [];
-  const normalizedFiles = files.map((f: any) => {
-    const isRansomware =
-      String(f.prediction).toLowerCase() === "ransomware" ||
-      (typeof f.filename === "string" &&
-        (f.filename.toLowerCase().endsWith(".rec") ||
-          f.filename.toLowerCase().endsWith(".enc")));
-
-    const entropy = typeof f.entropy === "number" ? f.entropy : 0;
-
-    // Simple score: scale entropy to [0,1] and boost suspicious files
-    let score = Math.min(1, entropy / 8);
-    if (isRansomware) {
-      score = Math.max(score, 0.8);
+  
+  console.log(`[Frontend] Processing ${files.length} files`);
+  
+  // Log critical/high risk files
+  const criticalFiles = files.filter((f: any) => f.risk_level === 'CRITICAL');
+  const highFiles = files.filter((f: any) => f.risk_level === 'HIGH');
+  console.log(`[Frontend] CRITICAL: ${criticalFiles.length}, HIGH: ${highFiles.length}`);
+  
+  for (const file of criticalFiles) {
+    console.log(`[Frontend] CRITICAL FILE: ${file.filename} - Risk Score: ${file.risk_score}%`);
+    if (file.findings?.length > 0) {
+      console.log(`[Frontend]   Findings: ${file.findings[0].description}`);
     }
-
-    return {
-      path: f.full_path ?? f.path ?? "",
-      entropy,
-      score,
-      prediction: isRansomware ? "ransomware" : "benign",
-      blocked: Boolean(f.blocked),
-    };
-  });
+  }
 
   const normalized = {
     timestamp: raw?.timestamp ?? null,
-    files: normalizedFiles,
+    files: files,  // Pass through the raw files with all new fields
   };
 
+  console.log("[Frontend] Normalized result:", normalized);
   return normalized;
 };

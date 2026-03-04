@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Block Adventure</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+        
+        #gameContainer {
+            position: relative;
+            border: 4px solid #e94560;
+            border-radius: 8px;
+            box-shadow: 0 0 40px rgba(233, 69, 96, 0.4), inset 0 0 60px rgba(0,0,0,0.3);
+        }
+        
+        #gameCanvas {
+            display: block;
+            background: linear-gradient(180deg, #87CEEB 0%, #E0F6FF 100%);
+        }
+        
+        #ui {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            pointer-events: none;
+        }
+        
+        #score, #level, #lives {
+            color: white;
+            font-size: 14px;
+            text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+        }
+        
+        #lives {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .heart {
+            color: #e94560;
+            font-size: 16px;
+        }
+        
+        #powerupBar {
+            position: absolute;
+            top: 40px;
+            left: 20px;
+            display: none;
+        }
+        
+        .powerup-timer {
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            font-size: 10px;
+            margin-bottom: 5px;
+            border-radius: 4px;
+        }
+        
+        .powerup-timer.invincible {
+            border-left: 4px solid #3498DB;
+        }
+        
+        .powerup-timer.speed {
+            border-left: 4px solid #2ECC71;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="ui">
+            <div id="score">SCORE: 0</div>
+            <div id="lives">
+                <span class="heart">♥</span>
+                <span class="heart">♥</span>
+                <span class="heart">♥</span>
+            </div>
+            <div id="level">LEVEL: 1</div>
+        </div>
+        <div id="powerupBar"></div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Game state
+        const GameState = {
+            START: 'start',
+            PLAYING: 'playing',
+            LEVEL_COMPLETE: 'levelComplete',
+            GAME_OVER: 'gameOver',
+            VICTORY: 'victory'
+        };
+        
+        let gameState = GameState.START;
+        let score = 0;
+        let lives = 3;
+        let currentLevel = 1;
+        let levelStartTime = 0;
+        let lastExtraLife = 0;
+        
+        // Player
+        const player = {
+            x: 100,
+            y: 400,
+            width: 32,
+            height: 32,
+            vx: 0,
+            vy: 0,
+            speed: 5,
+            jumpPower: -12,
+            gravity: 0.5,
+            maxFall: 15,
+            grounded: false,
+            invincible: false,
+            invincibleTimer: 0,
+            speedUp: false,
+            speedTimer: 0,
+            facingRight: true,
+            flashTimer: 0
+        };
+        
+        // Camera
+        let camera = { x: 0 };
+        
+        // Level data
+        let platforms = [];
+        let enemies = [];
+        let coins = [];
+        let powerups = [];
+        let exitPipe = null;
+        
+        // Controls
+        const keys = {};
+        
+        // Level definitions
+        const levels = [
+            // Level 1 - Tutorial
+            {
+                platforms: [
+                    { x: 0, y: 550, width: 1200, height: 50 },
+                    { x: 300, y: 450, width: 150, height: 20 },
+                    { x: 550, y: 380, width: 150, height: 20 },
+                ],
+                enemies: [
+                    { x: 400, y: 522, type: 'moving' },
+                    { x: 700, y: 522, type: 'moving' },
+                ],
+                flyingEnemies: [
+                    { x: 600, y: 300, type: 'flying' },
+                ],
+                coins: [
+                    { x: 350, y: 420 }, { x: 400, y: 420 }, { x: 450, y: 420 },
+                    { x: 600, y: 350 }, { x: 650, y: 350 }, { x: 700, y: 350 },
+                    { x: 200, y: 520 }, { x: 250, y: 520 }, { x: 800, y: 520 }, { x: 850, y: 520 },
+                ],
+                powerups: [],
+                pipe: { x: 1100, y: 490 }
+            },
+            // Level 2 - Introduction
+            {
+                platforms: [
+                    { x: 0, y: 550, width: 600, height: 50 },
+                    { x: 700, y: 550, width: 800, height: 50 },
+                    { x: 200, y: 450, width: 150, height: 20 },
+                    { x: 450, y: 380, width: 150, height: 20 },
+                    { x: 750, y: 450, width: 150, height: 20 },
+                    { x: 1000, y: 380, width: 150, height: 20 },
+                    { x: 1250, y: 320, width: 150, height: 20 },
+                ],
+                enemies: [
+                    { x: 200, y: 422, type: 'moving' },
+                    { x: 800, y: 522, type: 'moving' },
+                    { x: 1100, y: 522, type: 'moving' },
+                ],
+                flyingEnemies: [
+                    { x: 500, y: 250, type: 'flying' },
+                    { x: 900, y: 280, type: 'flying' },
+                ],
+                coins: [
+                    { x: 250, y: 420 }, { x: 300, y: 420 }, { x: 500, y: 350 },
+                    { x: 550, y: 350 }, { x: 800, y: 420 }, { x: 850, y: 420 },
+                    { x: 1050, y: 350 }, { x: 1100, y: 350 }, { x: 1300, y: 290 },
+                    { x: 100, y: 520 }, { x: 150, y: 520 }, { x: 900, y: 520 },
+                ],
+                powerups: [
+                    { x: 1300, y: 290, type: 'speed' }
+                ],
+                pipe: { x: 1450, y: 490 }
+            },
+            // Level 3 - Challenge
+            {
+                platforms: [
+                    { x: 0, y: 550, width: 400, height: 50 },
+                    { x: 500, y: 550, width: 300, height: 50 },
+                    { x: 900, y: 550, width: 600, height: 50 },
+                    { x: 150, y: 450, width: 120, height: 20 },
+                    { x: 350, y: 380, width: 120, height: 20 },
+                    { x: 550, y: 450, width: 120, height: 20 },
+                    { x: 750, y: 380, width: 120, height: 20 },
+                    { x: 1000, y: 450, width: 120, height: 20 },
+                    { x: 1200, y: 380, width: 150, height: 20 },
+                    { x: 1400, y: 320, width: 150, height: 20 },
+                ],
+                enemies: [
+                    { x: 100, y: 422, type: 'moving' },
+                    { x: 550, y: 422, type: 'moving' },
+                    { x: 1000, y: 522, type: 'moving' },
+                    { x: 1300, y: 522, type: 'moving' },
+                ],
+                flyingEnemies: [
+                    { x: 400, y: 300, type: 'flying' },
+                    { x: 850, y: 250, type: 'flying' },
+                ],
+                coins: [
+                    { x: 180, y: 420 }, { x: 230, y: 420 }, { x: 400, y: 350 },
+                    { x: 450, y: 350 }, { x: 600, y: 420 }, { x: 800, y: 350 },
+                    { x: 850, y: 350 }, { x: 1050, y: 420 }, { x: 1100, y: 420 },
+                    { x: 1250, y: 350 }, { x: 1300, y: 350 }, { x: 1450, y: 290 },
+                    { x: 1500, y: 290 }, { x: 300, y: 520 }, { x: 700, y: 520 },
+                ],
+                powerups: [
+                    { x: 1450, y: 290, type: 'invincible' }
+                ],
+                pipe: { x: 1450, y: 490 }
+            },
+            // Level 4 - Gauntlet
+            {
+                platforms: [
+                    { x: 0, y: 550, width: 300, height: 50 },
+                    { x: 400, y: 550, width: 200, height: 50 },
+                    { x: 700, y: 550, width: 200, height: 50 },
+                    { x: 1000, y: 550, width: 200, height: 50 },
+                    { x: 1300, y: 550, width: 400, height: 50 },
+                    { x: 100, y: 450, width: 100, height: 20 },
+                    { x: 300, y: 380, width: 100, height: 20 },
+                    { x: 500, y: 450, width: 100, height: 20 },
+                    { x: 700, y: 380, width: 100, height: 20 },
+                    { x: 900, y: 450, width: 100, height: 20 },
+                    { x: 1100, y: 380, width: 100, height: 20 },
+                    { x: 1350, y: 420, width: 120, height: 20 },
+                    { x: 1550, y: 350, width: 120, height: 20 },
+                ],
+                enemies: [
+                    { x: 150, y: 422, type: 'moving' },
+                    { x: 450, y: 522, type: 'moving' },
+                    { x: 750, y: 522, type: 'moving' },
+                    { x: 1050, y: 522, type: 'moving' },
+                ],
+                flyingEnemies: [
+                    { x: 250, y: 280, type: 'flying' },
+                    { x: 600, y: 250, type: 'flying' },
+                    { x: 1000, y: 280, type: 'flying' },
+                ],
+                coins: [
+                    { x: 120, y: 420 }, { x: 170, y: 420 }, { x: 330, y: 350 },
+                    { x: 380, y: 350 }, { x: 530, y: 420 }, { x: 580, y: 420 },
+                    { x: 730, y: 350 }, { x: 780, y: 350 }, { x: 930, y: 420 },
+                    { x: 980, y: 420 }, { x: 1130, y: 350 }, { x: 1180, y: 350 },
+                    { x: 1400, y: 380 }, { x: 1450, y: 380 }, { x: 1600, y: 320 },
+                    { x: 1650, y: 320 }, { x: 500, y: 520 }, { x: 1400, y: 520 },
+                ],
+                powerups: [
+                    { x: 1600, y: 320, type: 'speed' },
+                    { x: 1650, y: 320, type: 'invincible' }
+                ],
+                pipe: { x: 1650, y: 490 }
+            },
+            // Level 5 - Final
+            {
+                platforms: [
+                    { x: 0, y: 550, width: 250, height: 50 },
+                    { x: 350, y: 550, width: 150, height: 50 },
+                    { x: 600, y: 550, width: 150, height: 50 },
+                    { x: 850, y: 550, width: 150, height: 50 },
+                    { x: 1100, y: 550, width: 150, height: 50 },
+                    { x: 1350, y: 550, width: 150, height: 50 },
+                    { x: 1600, y: 550, width: 400, height: 50 },
+                    { x: 80, y: 450, width: 100, height: 20 },
+                    { x: 220, y: 380, width: 100, height: 20 },
+                    { x: 400, y: 450, width: 100, height: 20 },
+                    { x: 550, y: 380, width: 100, height: 20 },
+                    { x: 700, y: 450, width: 100, height: 20 },
+                    { x: 850, y: 380, width: 100, height: 20 },
+                    { x: 1000, y: 450, width: 100, height: 20 },
+                    { x: 1150, y: 380, width: 100, height: 20 },
+                    { x: 1300, y: 450, width: 100, height: 20 },
+                    { x: 1450, y: 380, width: 100, height: 20 },
+                    { x: 1650, y: 420, width: 120, height: 20 },
+                    { x: 1850, y: 350, width: 120, height: 20 },
+                ],
+                enemies: [
+                    { x: 100, y: 522, type: 'moving' },
+                    { x: 400, y: 522, type: 'moving' },
+                    { x: 650, y: 522, type: 'moving' },
+                    { x: 900, y: 522, type: 'moving' },
+                    { x: 1650, y: 522, type: 'moving' },
+                ],
+                flyingEnemies: [
+                    { x: 300, y: 280, type: 'flying' },
+                    { x: 600, y: 250, type: 'flying' },
+                    { x: 1100, y: 280, type: 'flying' },
+                ],
+                coins: [
+                    { x: 100, y: 420 }, { x: 150, y: 420 }, { x: 250, y: 350 },
+                    { x: 300, y: 350 }, { x: 430, y: 420 }, { x: 480, y: 420 },
+                    { x: 580, y: 350 }, { x: 630, y: 350 }, { x: 730, y: 420 },
+                    { x: 780, y: 420 }, { x: 880, y: 350 }, { x: 930, y: 350 },
+                    { x: 1030, y: 420 }, { x: 1080, y: 420 }, { x: 1180, y: 350 },
+                    { x: 1230, y: 350 }, { x: 1330, y: 420 }, { x: 1380, y: 420 },
+                    { x: 1700, y: 380 }, { x: 1750, y: 380 }, { x: 1900, y: 320 },
+                    { x: 1950, y: 320 }, { x: 550, y: 520 }, { x: 900, y: 520 },
+                ],
+                powerups: [
+                    { x: 1900, y: 320, type: 'speed' },
+                    { x: 1950, y: 320, type: 'invincible' }
+                ],
+                pipe: { x: 1950, y: 490 }
+            }
+        ];
+        
+        function loadLevel(levelNum) {
+            const level = levels[levelNum - 1];
+            platforms = level.platforms.map(p => ({ ...p }));
+            
+            enemies = level.enemies.map(e => ({
+                x: e.x,
+                y: e.y,
+                width: 28,
+                height: 28,
+                vx: 2,
+                startX: e.x,
+                type: 'moving'
+            }));
+            
+            enemies = enemies.concat(level.flyingEnemies.map(e => ({
+                x: e.x,
+                y: e.y,
+                width: 24,
+                height: 24,
+                vx: 2,
+                startX: e.x,
+                startY: e.y,
+                type: 'flying',
+                angle: 0
+            })));
+            
+            coins = level.coins.map(c => ({
+                x: c.x,
+                y: c.y,
+                radius: 8,
+                collected: false,
+                animOffset: Math.random() * Math.PI * 2
+            }));
+            
+            powerups = level.powerups.map(p => ({
+                x: p.x,
+                y: p.y,
+                width: p.type === 'speed' ? 20 : 24,
+                height: p.type === 'speed' ? 28 : 24,
+                type: p.type,
+                collected: false,
+                startY: p.y,
+                bounceOffset: Math.random() * Math.PI * 2
+            }));
+            
+            exitPipe = { ...level.pipe, width: 40, height: 60 };
+            
+            player.x = 100;
+            player.y = 400;
+            player.vx = 0;
+            player.vy = 0;
+            player.grounded = false;
+            player.invincible = false;
+            player.speedUp = false;
+            player.facingRight = true;
+            
+            camera.x = 0;
+            levelStartTime = Date.now();
+        }
+        
+        function resetPlayer() {
+            player.x = 100;
+            player.y = 400;
+            player.vx = 0;
+            player.vy = 0;
+            player.grounded = false;
+            player.invincible = false;
+            player.speedUp = false;
+            camera.x = 0;
+        }
+        
+        function update() {
+            if (gameState !== GameState.PLAYING) return;
+            
+            // Update power-up timers
+            if (player.invincible) {
+                player.invincibleTimer -= 1/60;
+                if (player.invincibleTimer <= 0) {
+                    player.invincible = false;
+                }
+            }
+            
+            if (player.speedUp) {
+                player.speedTimer -= 1/60;
+                if (player.speedTimer <= 0) {
+                    player.speedUp = false;
+                }
+            }
+            
+            // Player movement
+            let currentSpeed = player.speedUp ? player.speed * 1.5 : player.speed;
+            
+            if (keys['a'] || keys['A'] || keys['ArrowLeft']) {
+                player.vx = -currentSpeed;
+                player.facingRight = false;
+            } else if (keys['d'] || keys['D'] || keys['ArrowRight']) {
+                player.vx = currentSpeed;
+                player.facingRight = true;
+            } else {
+                player.vx = 0;
+            }
+            
+            // Jump
+            if ((keys['w'] || keys['W'] || keys['ArrowUp']) && player.grounded) {
+                player.vy = player.jumpPower;
+                player.grounded = false;
+            }
+            
+            // Fast fall
+            if (keys['s'] || keys['S'] || keys['ArrowDown']) {
+                player.vy = Math.min(player.vy + 0.8, player.maxFall * 1.5);
+            } else {
+                player.vy += player.gravity;
+                player.vy = Math.min(player.vy, player.maxFall);
+            }
+            
+            // Apply velocity
+            player.x += player.vx;
+            player.y += player.vy;
+            
+            // Platform collision
+            player.grounded = false;
+            for (let plat of platforms) {
+                if (player.x < plat.x + plat.width &&
+                    player.x + player.width > plat.x &&
+                    player.y < plat.y + plat.height &&
+                    player.y + player.height > plat.y) {
+                    
+                    // Top collision
+                    if (player.vy > 0 && player.y + player.height - player.vy <= plat.y + 5) {
+                        player.y = plat.y - player.height;
+                        player.vy = 0;
+                        player.grounded = true;
+                    }
+                    // Bottom collision
+                    else if (player.vy < 0 && player.y - player.vy >= plat.y + plat.height - 5) {
+                        player.y = plat.y + plat.height;
+                        player.vy = 0;
+                    }
+                    // Side collision
+                    else {
+                        if (player.vx > 0) {
+                            player.x = plat.x - player.width;
+                        } else if (player.vx < 0) {
+                            player.x = plat.x + plat.width;
+                        }
+                    }
+                }
+            }
+            
+            // World bounds
+            if (player.x < 0) player.x = 0;
+            if (player.y > 650) {
+                playerDeath();
+            }
+            
+            // Update enemies
+            for (let enemy of enemies) {
+                if (enemy.type === 'moving') {
+                    enemy.x += enemy.vx;
+                    // Find platform
+                    let onPlatform = platforms.find(p => 
+                        enemy.x + enemy.width > p.x && 
+                        enemy.x < p.x + p.width &&
+                        Math.abs(enemy.y + enemy.height - p.y) < 5
+                    );
+                    
+                    if (onPlatform) {
+                        if (enemy.x <= onPlatform.x || enemy.x + enemy.width >= onPlatform.x + onPlatform.width) {
+                            enemy.vx *= -1;
+                        }
+                    }
+                } else {
+                    enemy.angle += 0.05;
+                    enemy.x = enemy.startX + Math.sin(enemy.angle) * 80;
+                    enemy.y = enemy.startY + Math.cos(enemy.angle * 2) * 30;
+                }
+                
+                // Player-enemy collision
+                if (!player.invincible &&
+                    player.x < enemy.x + enemy.width &&
+                    player.x + player.width > enemy.x &&
+                    player.y < enemy.y + enemy.height &&
+                    player.y + player.height > enemy.y) {
+                    playerDeath();
+                }
+                
+                // Invincible player destroys enemies
+                if (player.invincible &&
+                    player.x < enemy.x + enemy.width &&
+                    player.x + player.width > enemy.x &&
+                    player.y < enemy.y + enemy.height &&
+                    player.y + player.height > enemy.y) {
+                    enemy.x = -1000; // Remove enemy
+                    score += 200;
+                }
+            }
+            
+            // Coin collection
+            for (let coin of coins) {
+                if (!coin.collected) {
+                    let dx = (player.x + player.width/2) - coin.x;
+                    let dy = (player.y + player.height/2) - coin.y;
+                    if (Math.sqrt(dx*dx + dy*dy) < coin.radius + 20) {
+                        coin.collected = true;
+                        score += 100;
+                    }
+                }
+            }
+            
+            // Power-up collection
+            for (let pu of powerups) {
+                if (!pu.collected) {
+                    if (player.x < pu.x + pu.width &&
+                        player.x + player.width > pu.x &&
+                        player.y < pu.y + pu.height &&
+                        player.y + player.height > pu.y) {
+                        pu.collected = true;
+                        if (pu.type === 'invincible') {
+                            player.invincible = true;
+                            player.invincibleTimer = 5;
+                        } else {
+                            player.speedUp = true;
+                            player.speedTimer = 8;
+                        }
+                    }
+                }
+            }
+            
+            // Exit pipe collision
+            if (exitPipe) {
+                if (player.x < exitPipe.x + exitPipe.width &&
+                    player.x + player.width > exitPipe.x &&
+                    player.y < exitPipe.y + exitPipe.height &&
+                    player.y + player.height > exitPipe.y) {
+                    completeLevel();
+                }
+            }
+            
+            // Camera follow
+            let targetCamera = player.x - 300;
+            if (targetCamera < 0) targetCamera = 0;
+            let maxCamera = Math.max(0, platforms[platforms.length-1].x + platforms[platforms.length-1].width - 800);
+            if (targetCamera > maxCamera) targetCamera = maxCamera;
+            camera.x += (targetCamera - camera.x) * 0.1;
+            
+            // Extra life check
+            if (score >= lastExtraLife + 5000) {
+                lastExtraLife += 5000;
+                lives = Math.min(lives + 1, 5);
+            }
+            
+            updateUI();
+        }
+        
+        function playerDeath() {
+            lives--;
+            if (lives <= 0) {
+                gameState = GameState.GAME_OVER;
+            } else {
+                resetPlayer();
+            }
+            updateUI();
+        }
+        
+        function completeLevel() {
+            // Time bonus
+            let timeTaken = (Date.now() - levelStartTime) / 1000;
+            let timeBonus = Math.max(0, Math.floor(500 - timeTaken * 2));
+            score += 1000 + timeBonus;
+            
+            if (currentLevel >= 5) {
+                gameState = GameState.VICTORY;
+            } else {
+                currentLevel++;
+                gameState = GameState.LEVEL_COMPLETE;
+            }
+            updateUI();
+        }
+        
+        function updateUI() {
+            document.getElementById('score').textContent = 'SCORE: ' + score;
+            document.getElementById('level').textContent = 'LEVEL: ' + currentLevel;
+            
+            let hearts = '';
+            for (let i = 0; i < lives; i++) {
+                hearts += '<span class="heart">♥</span>';
+            }
+            document.getElementById('lives').innerHTML = hearts;
+            
+            // Power-up bar
+            let bar = document.getElementById('powerupBar');
+            if (player.invincible || player.speedUp) {
+                bar.style.display = 'block';
+                bar.innerHTML = '';
+                if (player.invincible) {
+                    bar.innerHTML += `<div class="powerup-timer invincible">INVINCIBLE: ${player.invincibleTimer.toFixed(1)}s</div>`;
+                }
+                if (player.speedUp) {
+                    bar.innerHTML += `<div class="powerup-timer speed">SPEED: ${player.speedTimer.toFixed(1)}s</div>`;
+                }
+            } else {
+                bar.style.display = 'none';
+            }
+        }
+        
+        function draw() {
+            // Clear canvas
+            ctx.fillStyle = '#87CEEB';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw gradient sky
+            let gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#87CEEB');
+            gradient.addColorStop(1, '#E0F6FF');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw distant mountains (parallax)
+            ctx.fillStyle = '#A8D8EA';
+            for (let i = 0; i < 5; i++) {
+                let x = (i * 300 - camera.x * 0.2) % (canvas.width + 300) - 150;
+                ctx.beginPath();
+                ctx.moveTo(x, 600);
+                ctx.lineTo(x + 150, 300 - i * 30);
+                ctx.lineTo(x + 300, 600);
+                ctx.fill();
+            }
+            
+            ctx.save();
+            ctx.translate(-camera.x, 0);
+            
+            // Draw platforms
+            for (let plat of platforms) {
+                // Ground body
+                ctx.fillStyle = '#8B4513';
+                ctx.fillRect(plat.x, plat.y, plat.width, plat.height);
+                // Grass top
+                ctx.fillStyle = '#228B22';
+                ctx.fillRect(plat.x, plat.y, plat.width, 8);
+            }
+            
+            // Draw pipe
+            if (exitPipe) {
+                ctx.fillStyle = '#27AE60';
+                ctx.fillRect(exitPipe.x, exitPipe.y, exitPipe.width, exitPipe.height);
+                // Pipe top rim
+                ctx.fillStyle = '#2ECC71';
+                ctx.fillRect(exitPipe.x - 5, exitPipe.y, exitPipe.width + 10, 15);
+                // Pipe opening
+                ctx.fillStyle = '#1a1a2e';
+                ctx.fillRect(exitPipe.x + 8, exitPipe.y + 15, exitPipe.width - 16, 20);
+            }
+            
+            // Draw coins
+            let time = Date.now() / 1000;
+            for (let coin of coins) {
+                if (!coin.collected) {
+                    let bounce = Math.sin(time * 3 + coin.animOffset) * 3;
+                    ctx.fillStyle = '#F1C40F';
+                    ctx.beginPath();
+                    ctx.arc(coin.x, coin.y + bounce, coin.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Shine
+                    ctx.fillStyle = '#FFF9C4';
+                    ctx.beginPath();
+                    ctx.arc(coin.x - 2, coin.y + bounce - 2, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            
+            // Draw power-ups
+            for (let pu of powerups) {
+                if (!pu.collected) {
+                    let bounce = Math.sin(time * 4 + pu.bounceOffset) * 5;
+                    if (pu.type === 'invincible') {
+                        // Star shape
+                        ctx.fillStyle = '#3498DB';
+                        drawStar(pu.x + 12, pu.y + 12 + bounce, 5, 12, 6);
+                    } else {
+                        // Lightning bolt
+                        ctx.fillStyle = '#2ECC71';
+                        ctx.beginPath();
+                        ctx.moveTo(pu.x + 10, pu.y + bounce);
+                        ctx.lineTo(pu.x + 20, pu.y + 10 + bounce);
+                        ctx.lineTo(pu.x + 12, pu.y + 10 + bounce);
+                        ctx.lineTo(pu.x + 15, pu.y + 28 + bounce);
+                        ctx.lineTo(pu.x + 5, pu.y + 16 + bounce);
+                        ctx.lineTo(pu.x + 12, pu.y + 16 + bounce);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+                }
+            }
+            
+            // Draw enemies
+            for (let enemy of enemies) {
+                if (enemy.x < -500) continue;
+                
+                if (enemy.type === 'moving') {
+                    ctx.fillStyle = '#9B59B6';
+                    ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+                    // Eyes
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(enemy.x + 4, enemy.y + 6, 8, 8);
+                    ctx.fillRect(enemy.x + 16, enemy.y + 6, 8, 8);
+                    ctx.fillStyle = 'black';
+                    ctx.fillRect(enemy.x + 6 + (enemy.vx > 0 ? 2 : 0), enemy.y + 8, 4, 4);
+                    ctx.fillRect(enemy.x + 18 + (enemy.vx > 0 ? 2 : 0), enemy.y + 8, 4, 4);
+                } else {
+                    ctx.fillStyle = '#F39C12';
+                    ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+                    // Wings
+                    ctx.fillStyle = '#E67E22';
+                    let wingFlap = Math.sin(time * 10) * 5;
+                    ctx.fillRect(enemy.x - 8, enemy.y - 5 + wingFlap, 8, 10);
+                    ctx.fillRect(enemy.x + 24, enemy.y - 5 + wingFlap, 8, 10);
+                }
+            }
+            
+            // Draw player
+            if (player.invincible) {
+                // Glow effect
+                let glowSize = Math.sin(time * 15) * 5 + 10;
+                ctx.fillStyle = `rgba(52, 152, 219, ${0.3 + Math.sin(time * 10) * 0.2})`;
+                ctx.fillRect(player.x - glowSize, player.y - glowSize, 
+                           player.width + glowSize*2, player.height + glowSize*2);
+            }
+            
+            ctx.fillStyle = player.invincible ? 
+                (Math.sin(time * 20) > 0 ? '#E74C3C' : '#FFFFFF') : '#E74C3C';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            
+            // Player face
+            ctx.fillStyle = 'white';
+            let eyeOffset = player.facingRight ? 4 : -4;
+            ctx.fillRect(player.x + 8 + eyeOffset, player.y + 6, 6, 8);
+            ctx.fillRect(player.x + 20 + eyeOffset, player.y + 6, 6, 8);
+            ctx.fillStyle = 'black';
+            ctx.fillRect(player.x + 10 + eyeOffset, player.y + 8, 3, 4);
+            ctx.fillRect(player.x + 22 + eyeOffset, player.y + 8, 3, 4);
+            
+            ctx.restore();
+            
+            // Draw UI overlays
+            if (gameState === GameState.START) {
+                drawOverlay('BLOCK ADVENTURE', 'Press SPACE to Start', 
+                   'WASD to Move | W to Jump | S to Fast Fall');
+            } else if (gameState === GameState.LEVEL_COMPLETE) {
+                let timeTaken = (Date.now() - levelStartTime) / 1000;
+                let timeBonus = Math.max(0, Math.floor(500 - timeTaken * 2));
+                drawOverlay(`LEVEL ${currentLevel} COMPLETE!`, `Score: ${score}`, 
+                   `Time Bonus: +${timeBonus}`, 'Press SPACE for Next Level');
+            } else if (gameState === GameState.GAME_OVER) {
+                drawOverlay('GAME OVER', `Final Score: ${score}`, 'Press SPACE to Restart');
+            } else if (gameState === GameState.VICTORY) {
+                drawOverlay('CONGRATULATIONS!', `Final Score: ${score}`, 
+                   'You completed all 5 levels!', 'Press SPACE to Play Again');
+            }
+        }
+        
+        function drawStar(cx, cy, spikes, outerRadius, innerRadius) {
+            let rot = Math.PI / 2 * 3;
+            let x = cx;
+            let y = cy;
+            let step = Math.PI / spikes;
+            
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - outerRadius);
+            for (let i = 0; i < spikes; i++) {
+                x = cx + Math.cos(rot) * outerRadius;
+                y = cy + Math.sin(rot) * outerRadius;
+                ctx.lineTo(x, y);
+                rot += step;
+                
+                x = cx + Math.cos(rot) * innerRadius;
+                y = cy + Math.sin(rot) * innerRadius;
+                ctx.lineTo(x, y);
+                rot += step;
+            }
+            ctx.lineTo(cx, cy - outerRadius);
+            ctx.closePath();
+            ctx.fill();
+        }
+        
+        function drawOverlay(title, subtitle, extra1, extra2) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = '#F1C40F';
+            ctx.font = '36px "Press Start 2P", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(title, canvas.width/2, 200);
+            
+            ctx.fillStyle = 'white';
+            ctx.font = '20px "Press Start 2P", monospace';
+            ctx.fillText(subtitle, canvas.width/2, 300);
+            
+            if (extra1) {
+                ctx.font = '14px "Press Start 2P", monospace';
+                ctx.fillText(extra1, canvas.width/2, 360);
+            }
+            
+            if (extra2) {
+                ctx.fillText(extra2, canvas.width/2, 400);
+            }
+        }
+        
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Input handling
+        document.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            
+            if (e.key === ' ') {
+                if (gameState === GameState.START) {
+                    gameState = GameState.PLAYING;
+                    score = 0;
+                    lives = 3;
+                    currentLevel = 1;
+                    lastExtraLife = 0;
+                    loadLevel(1);
+                } else if (gameState === GameState.LEVEL_COMPLETE) {
+                    gameState = GameState.PLAYING;
+                    loadLevel(currentLevel);
+                } else if (gameState === GameState.GAME_OVER) {
+                    gameState = GameState.PLAYING;
+                    score = 0;
+                    lives = 3;
+                    currentLevel = 1;
+                    lastExtraLife = 0;
+                    loadLevel(1);
+                } else if (gameState === GameState.VICTORY) {
+                    gameState = GameState.START;
+                }
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+        
+        // Start game loop
+        gameLoop();
+    </script>
+</body>
+</html>

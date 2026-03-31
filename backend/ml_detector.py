@@ -1,7 +1,11 @@
 import joblib
 import pandas as pd
+from pathlib import Path
 
-MODEL_PATH = "../model/random_forest.pkl"
+# Use absolute path from this file's location
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_PATH = BASE_DIR.parent / "model" / "random_forest.pkl"
+
 model = joblib.load(MODEL_PATH)
 FEATURES = model.feature_names_in_
 

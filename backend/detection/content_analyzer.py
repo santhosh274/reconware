@@ -51,6 +51,11 @@ class ContentAnalyzer:
         (r'Get-Process.*Kill', 'Process termination capability', 75),
         (r'Stop-Process', 'Stops processes - potential data destruction', 80),
         (r'Remove-Item.*-Recurse', 'Recursive file deletion', 85),
+        
+        # System tool manipulation (Early stage)
+        (r'vssadmin.*delete.*shadows', 'Deleting Shadow Copies', 95),
+        (r'wbadmin.*delete.*catalog', 'Deleting backup catalog', 95),
+        (r'bcdedit.*/set.*recoveryenabled', 'Disabling recovery', 90),
     ]
     
     # PowerShell specific patterns
@@ -71,6 +76,10 @@ class ContentAnalyzer:
         (r'\[System\.IO\.File\]::WriteAllBytes', 'Writes file contents - potential encryption', 80),
         (r'Encrypt', 'Encryption operation', 85),
         (r'Decrypt', 'Decryption operation', 70),
+        # Early stage system tools
+        (r'vssadmin.*delete.*shadows', 'Deleting Shadow Copies', 95),
+        (r'wbadmin.*delete.*catalog', 'Deleting backup catalog', 95),
+        (r'bcdedit.*/set.*recoveryenabled', 'Disabling recovery', 90),
     ]
     
     # VBScript patterns
@@ -95,6 +104,33 @@ class ContentAnalyzer:
         (r'gpg\s+--encrypt', 'File encryption using GPG', 80),
         (r'chattr\s+-i', 'Removes immutable attribute', 75),
     ]
+
+    # Python-specific malicious patterns
+    PYTHON_MALICIOUS_PATTERNS = [
+        # Crypto/currency patterns
+        (r'bitcoin|btc|monero|xmr', 'Cryptocurrency-related code', 30),
+        (r'ransom', 'Ransomware-related term', 40),
+        # Encryption patterns
+        (r'def\s+encrypt', 'Encryption function definition', 75),
+        (r'def\s+decrypt', 'Decryption function definition', 75),
+        (r'from\s+Crypto|import\s+Crypto', 'Crypto library usage', 70),
+        (r'from\s+cryptography|import\s+cryptography', 'Cryptography library usage', 70),
+        (r'\.encrypt\(|\.decrypt\(', 'Encryption/decryption method calls', 80),
+        # File manipulation patterns
+        (r'os\.walk', 'Directory traversal - enumerate files', 60),
+        (r'\.encrypted', 'Encrypted file extension', 85),
+        (r'\.bak', 'Backup file creation', 50),
+        # Network/exfiltration
+        (r'urllib|requests\.get|httpx', 'HTTP network requests', 55),
+        (r'tor|onion', 'Tor network usage', 35),
+        # Process manipulation
+        (r'subprocess\.run|subprocess\.call', 'Execute system commands', 70),
+        (r'os\.system\(|os\.popen', 'Direct system command execution', 75),
+        (r'psutil', 'Process enumeration library', 65),
+        # Key generation
+        (r'random\.choice.*string', 'Random key generation', 70),
+        (r'\.xor|xor.*data', 'XOR encryption', 85),
+    ]
     
     # Ransomware file extension patterns (suspicious new extensions)
     RANSOMWARE_EXTENSIONS = [
@@ -103,12 +139,60 @@ class ContentAnalyzer:
         '.locky', '.cryptolocker', '.wannacry', '.petya', '.notpetya'
     ]
     
-    # Suspicious file operations that indicate ransomware behavior
+    # Critical patterns that trigger immediate high risk without division
+    CRITICAL_PATTERNS = [
+        # System recovery destruction (Ransomware preparation)
+        (r'vssadmin.*delete.*shadows', 'Deleting Shadow Copies (Ransomware Preparation)', 95),
+        (r'wbadmin.*delete.*catalog', 'Deleting Backup Catalog (Ransomware Preparation)', 95),
+        (r'bcdedit.*/set.*recoveryenabled.*no', 'Disabling System Recovery', 90),
+        (r'Set-MpPreference.*-Disable', 'Disabling Windows Defender', 95),
+        # Ransom note patterns
+        (r'your files (have been|are) encrypted', 'Classic ransom note opening - files encrypted', 95),
+        (r'send .{0,30}bitcoin', 'Bitcoin payment demand in ransom note', 90),
+        (r'to (recover|restore|decrypt) your files', 'File recovery demand - ransom note', 85),
+        (r'contact .{0,40}(tor|onion|darkweb)', 'Tor/dark web contact for ransom payment', 90),
+        (r'unique (decrypt|decryption) key', 'Unique decryption key - typical ransom note', 85),
+        (r'bitcoin.*payment', 'Bitcoin payment instruction', 90),
+        (r'(ransom|decrypt).*(bitcoin|btc|monero|xmr)', 'Cryptocurrency ransom demand', 95),
+        (r'pay.*(within|before).*(hours|days|deadline)', 'Payment deadline threat', 85),
+    ]
+
+    # Suspicious file operations and system tool usage
     SUSPICIOUS_OPERATIONS = [
+        # Ransomware file behavior
         (r'Rename-Item.*\.encrypted', 'File renaming to encrypted extension', 90),
         (r'Rename-Item.*\.locked', 'File renaming to locked extension', 90),
         (r'\.Move.*\.enc', 'Moving to .enc extension', 85),
         (r'Get-ChildItem.*\.txt\|.*Remove', 'Deleting all text files', 95),
+        
+        # System backup and recovery destruction (Early Stage Indicators)
+        (r'vssadmin.*delete.*shadows', 'Attempting to delete Shadow Copies (prevents file recovery)', 95),
+        (r'wbadmin.*delete.*catalog', 'Deleting system backup catalog', 95),
+        (r'bcdedit.*/set.*recoveryenabled.*no', 'Disabling Windows Recovery environment', 90),
+        (r'bcdedit.*/set.*bootstatuspolicy.*ignoreallfailures', 'Suppressing boot error messages', 85),
+        (r'cipher.*/w:', 'Wiping free disk space (secure deletion)', 80),
+        (r'netsh.*advfirewall.*off', 'Disabling firewall via netsh', 90),
+    ]
+
+    # Ransomware source code patterns (for .c, .cpp, .py, .js, etc.)
+    RANSOMWARE_CODE_PATTERNS = [
+        # File encryption patterns
+        (r'EncryptFile', 'File encryption function', 85),
+        (r'CryptEncrypt', 'Windows Crypto API encryption', 90),
+        (r'CryptDecrypt', 'Windows Crypto API decryption', 85),
+        (r'RC4_Encrypt|rc4_encrypt', 'RC4 encryption implementation', 80),
+        (r'AES_(Encrypt|Decrypt)', 'AES encryption/decryption', 80),
+        (r'RSA_(Encrypt|Decrypt)', 'RSA encryption/decryption', 85),
+        # File deletion/backup prevention
+        (r'ShadowCopyDelete|delete.*shadow', 'Shadow copy deletion code', 95),
+        (r'CreateProcess.*cmd\.exe.*vssadmin', 'Creates process to delete shadows', 95),
+        (r'System\(.*vssadmin', 'Executes vssadmin command', 90),
+        # Network/exfiltration
+        (r'SendKeys|socket.*send', 'Keylogging or data exfiltration', 85),
+        (r'Bitcoin|bitcoin|wallet.*address', 'Bitcoin/wallet address handling', 80),
+        # Process termination
+        (r'TerminateProcess.*explorer', 'Terminates explorer process', 85),
+        (r'KillProcess|process.*kill', 'Process killing capability', 80),
     ]
     
     @classmethod
@@ -163,6 +247,8 @@ class ContentAnalyzer:
             return cls._analyze_vbs_file(content, file_path)
         elif file_ext in ['.sh', '.bash']:
             return cls._analyze_bash_file(content, file_path)
+        elif file_ext in ['.py', '.pyw']:
+            return cls._analyze_python_file(content, file_path)
         else:
             # Generic text file analysis
             return cls._analyze_generic_text(content, file_path)
@@ -209,6 +295,12 @@ class ContentAnalyzer:
                 })
                 risk_score = max(risk_score, severity)
         
+        # Check for critical patterns (no division)
+        for pattern, description, severity in cls.CRITICAL_PATTERNS:
+            if re.search(pattern, content, re.IGNORECASE):
+                findings.append({"description": description, "severity": severity})
+                risk_score = max(risk_score, severity)
+        
         # Check for suspicious operations
         for pattern, description, severity in cls.SUSPICIOUS_OPERATIONS:
             if re.search(pattern, content, re.IGNORECASE):
@@ -245,6 +337,12 @@ class ContentAnalyzer:
                     "severity": severity
                 })
                 risk_score = min(100, risk_score + severity // 3)
+        
+        # Check for critical patterns (no division)
+        for pattern, description, severity in cls.CRITICAL_PATTERNS:
+            if re.search(pattern, content, re.IGNORECASE):
+                findings.append({"description": description, "severity": severity})
+                risk_score = max(risk_score, severity)
         
         # Check for suspicious operations
         for pattern, description, severity in cls.SUSPICIOUS_OPERATIONS:
@@ -323,6 +421,57 @@ class ContentAnalyzer:
             "file_type": "bash",
             "risk_level": cls._get_risk_level(risk_score)
         }
+
+    @classmethod
+    def _analyze_python_file(cls, content: str, file_path: str) -> Dict[str, Any]:
+        """Analyze Python script for malicious patterns"""
+        findings = []
+        risk_score = 0
+        content_lower = content.lower()
+        
+        for pattern, description, severity in cls.PYTHON_MALICIOUS_PATTERNS:
+            matches = re.finditer(pattern, content, re.IGNORECASE | re.MULTILINE)
+            for match in matches:
+                line_num = content[:match.start()].count('\n') + 1
+                findings.append({
+                    "line": line_num,
+                    "code": match.group()[:80],
+                    "description": description,
+                    "severity": severity
+                })
+                risk_score = min(100, risk_score + severity // 2)
+        
+        # Check for critical patterns (no division - these bypass score limits)
+        for pattern, description, severity in cls.CRITICAL_PATTERNS:
+            if re.search(pattern, content_lower, re.IGNORECASE):
+                findings.append({"description": description, "severity": severity})
+                risk_score = max(risk_score, severity)
+        
+        # Check for suspicious operations
+        for pattern, description, severity in cls.SUSPICIOUS_OPERATIONS:
+            if re.search(pattern, content, re.IGNORECASE):
+                findings.append({
+                    "description": description,
+                    "severity": severity
+                })
+                risk_score = min(100, risk_score + severity // 3)
+        
+        # Check for ransomware code patterns
+        for pattern, description, severity in cls.RANSOMWARE_CODE_PATTERNS:
+            if re.search(pattern, content_lower, re.IGNORECASE):
+                findings.append({
+                    "description": description,
+                    "severity": severity
+                })
+                risk_score = min(100, risk_score + severity // 2)
+        
+        return {
+            "analysis_type": "python",
+            "risk_score": min(100, risk_score),
+            "findings": findings,
+            "file_type": "python",
+            "risk_level": cls._get_risk_level(risk_score)
+        }
     
     @classmethod
     def _analyze_generic_text(cls, content: str, file_path: str) -> Dict[str, Any]:
@@ -387,6 +536,18 @@ class ContentAnalyzer:
         ]
         for pattern, description, severity in ransom_patterns:
             if re.search(pattern, content_lower):
+                findings.append({"description": description, "severity": severity})
+                risk_score = min(100, risk_score + severity)
+
+        # Check for critical patterns (no division - these bypass score limits)
+        for pattern, description, severity in cls.CRITICAL_PATTERNS:
+            if re.search(pattern, content_lower, re.IGNORECASE):
+                findings.append({"description": description, "severity": severity})
+                risk_score = max(risk_score, severity)
+
+        # Check for ransomware code patterns in source files
+        for pattern, description, severity in cls.RANSOMWARE_CODE_PATTERNS:
+            if re.search(pattern, content_lower, re.IGNORECASE):
                 findings.append({"description": description, "severity": severity})
                 risk_score = min(100, risk_score + severity // 2)
 

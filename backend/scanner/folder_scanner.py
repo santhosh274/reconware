@@ -1,8 +1,10 @@
-
+import os
 from pathlib import Path
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from .entropy import calculate_entropy
 from detection.content_analyzer import ContentAnalyzer
+from .file_analyzer import analyze_file
 
 
 def _is_pe_file(file_path: Path) -> bool:
@@ -86,7 +88,7 @@ def process_file(file_path: Path, model=None):
         # File has a known ransomware extension → immediately critical
         combined_risk_score = 100
 
-    elif file_type in ["batch", "powershell", "vbscript", "bash"]:
+    elif file_type in ["batch", "powershell", "vbscript", "bash","python"]:
         # Script files: content analysis is the primary signal
         combined_risk_score = content_risk_score
         # Entropy can boost the score for packed/obfuscated scripts
@@ -128,7 +130,7 @@ def process_file(file_path: Path, model=None):
     if file_type == "encrypted":
         # Known ransomware extension → always block
         blocked = True
-    elif file_type in ["batch", "powershell", "vbscript", "bash"] and findings:
+    elif file_type in ["batch", "powershell", "vbscript", "bash", "python"] and findings:
         # Script with actual malicious patterns found → block if HIGH or above
         blocked = combined_risk_score >= 60
     elif combined_risk_score >= 70:
@@ -160,21 +162,36 @@ def process_file(file_path: Path, model=None):
 
 def scan_folder(folder_path: str, model=None):
     """
-    Recursively scan folder with accurate, low-false-positive detection.
+    Recursively scan folder and detect ransomware-like files.
+    Optimized with parallel processing.
     """
     base = Path(folder_path)
     if not base.exists():
         raise ValueError(f"Path does not exist: {folder_path}")
 
-    files = []
-    for p in base.rglob("*"):
-        try:
-            if p.is_file():
-                file_info = process_file(p, model)
-                files.append(file_info)
-        except PermissionError:
-            continue
-        except Exception as e:
-            print(f"Error processing {p}: {e}")
-            continue
-    return files
+    # Gather all candidate files first
+    all_files = [p for p in base.rglob("*") if p.is_file()]
+    results = []
+
+    # Use a thread pool for parallel processing (feature extraction is IO/CPU mixed)
+    # Using max_workers derived from CPU count or a fixed number for better response
+    max_workers = min(32, (os.cpu_count() or 4) * 4)
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_file = {executor.submit(process_file, p, model): p for p in all_files}
+        
+        # Process as they complete
+        for future in as_completed(future_to_file):
+            p = future_to_file[future]
+            try:
+                file_info = future.result()
+                if file_info:
+                    results.append(file_info)
+            except PermissionError:
+                continue
+            except Exception as e:
+                print(f"Error processing {p}: {e}")
+                continue
+
+    return results

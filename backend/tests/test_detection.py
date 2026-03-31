@@ -21,9 +21,9 @@ from scanner.folder_scanner import process_file
 from scanner.entropy import calculate_entropy
 
 
-PASS = "✅ PASS"
-FAIL = "❌ FAIL"
-WARN = "⚠️  WARN"
+PASS = "PASS"
+FAIL = "FAIL"
+WARN = "WARN"
 
 passed = 0
 failed = 0

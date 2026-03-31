@@ -3,6 +3,7 @@ import json
 import threading
 import os
 import psutil
+from typing import List
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -10,10 +11,11 @@ from watchdog.events import FileSystemEventHandler
 from scanner.folder_scanner import process_file
 from prevention.quarantine import quarantine_file, QUARANTINE_DIR
 from prevention.process_killer import kill_ransomware_processes, get_process_using_file, kill_parent_and_children
-from detection.content_analyzer import ContentAnalyzer
+from detection.canary_manager import CanaryManager
 
 # Global model reference (set from main.py)
 _model = None
+_canary_manager = None
 
 # Configuration for early detection thresholds
 HIGH_RISK_THRESHOLD = 60  # Block and kill process immediately
@@ -30,6 +32,12 @@ def set_model(model):
     _model = model
 
 
+def init_canaries(folders_to_watch: List[str]):
+    global _canary_manager
+    _canary_manager = CanaryManager(folders_to_watch)
+    _canary_manager.deploy_canaries()
+
+
 class RansomwareEventHandler(FileSystemEventHandler):
     def __init__(self, folder_to_watch, results_file):
         self.folder = Path(folder_to_watch)
@@ -39,6 +47,13 @@ class RansomwareEventHandler(FileSystemEventHandler):
 
     def _process_file(self, file_path: Path):
         """Scan one file, quarantine if needed, and update results.json."""
+        # 1. Check for canary tampering (HIGHLY SENSITIVE)
+        if _canary_manager and _canary_manager.is_canary_file(str(file_path)):
+            if _canary_manager.check_canary_tampered(str(file_path)):
+                print(f"[Monitor] [ALERT] CANARY TAMPERED: {file_path}")
+                self._handle_critical_threat(file_path, "CANARY_TRIGGERED")
+            return
+
         # Ignore files inside quarantine directory
         if str(file_path).startswith(str(QUARANTINE_DIR)):
             return
@@ -58,6 +73,13 @@ class RansomwareEventHandler(FileSystemEventHandler):
         # Early detection: Check for ransomware-like behavior
         risk_score = file_info.get("risk_score", 0)
         risk_level = file_info.get("risk_level", "CLEARED")
+        findings = file_info.get("findings", [])
+        
+        # Check for system tool malicious usage in findings
+        is_system_tool_attack = any("vssadmin" in f.get('description', '').lower() or 
+                                    "shadows" in f.get('description', '').lower() or
+                                    "wbadmin" in f.get('description', '').lower()
+                                    for f in findings)
         
         # Check for rapid file changes (encryption behavior)
         directory = str(file_path.parent)
@@ -80,7 +102,7 @@ class RansomwareEventHandler(FileSystemEventHandler):
         is_rapid_encryption = rapid_changes >= RAPID_CHANGE_THRESHOLD
         
         if is_rapid_encryption:
-            print(f"[Monitor] ⚠️ RAPID ENCRYPTION DETECTED in {directory}!")
+            print(f"[Monitor] [WARN] RAPID ENCRYPTION DETECTED in {directory}!")
             print(f"[Monitor] {rapid_changes} file changes in {RAPID_CHANGE_TIME_WINDOW} seconds")
             
             # Kill processes in this directory
@@ -92,7 +114,11 @@ class RansomwareEventHandler(FileSystemEventHandler):
         action_taken = "none"
         
         # High risk or critical - kill process and quarantine
-        if risk_score >= HIGH_RISK_THRESHOLD or risk_level == "CRITICAL":
+        if is_system_tool_attack:
+            should_kill_process = True
+            should_block = True
+            action_taken = "BLOCKED_SYSTEM_TOOL_ATTACK"
+        elif risk_score >= HIGH_RISK_THRESHOLD or risk_level == "CRITICAL":
             should_kill_process = True
             should_block = True
             action_taken = "BLOCKED_HIGH_RISK"
@@ -106,26 +132,26 @@ class RansomwareEventHandler(FileSystemEventHandler):
         
         # Kill the process if needed (early detection at execution state)
         if should_kill_process:
-            print(f"[Monitor] 🚨 KILLING PROCESS for: {file_path}")
+            print(f"[Monitor] [ALERT] KILLING PROCESS for: {file_path}")
             success, killed_pids, message = kill_ransomware_processes(str(file_path))
             if success:
-                print(f"[Monitor] ✅ Killed {len(killed_pids)} process(es): {killed_pids}")
+                print(f"[Monitor] [OK] Killed {len(killed_pids)} process(es): {killed_pids}")
                 file_info["process_killed"] = True
                 file_info["killed_pids"] = killed_pids
             else:
-                print(f"[Monitor] ⚠️ Could not kill process: {message}")
+                print(f"[Monitor] [WARN] Could not kill process: {message}")
                 file_info["process_killed"] = False
                 file_info["kill_error"] = message
         
         # Quarantine if flagged
         if should_block:
-            print(f"[Monitor] 📦 Quarantining: {file_path}")
+            print(f"[Monitor] [ACTION] Quarantining: {file_path}")
             success, message = quarantine_file(file_path)
             if success:
-                print(f"[Monitor] ✅ Quarantined: {message}")
+                print(f"[Monitor] [OK] Quarantined: {message}")
                 file_info["quarantined"] = True
             else:
-                print(f"[Monitor] ⚠️ Quarantine failed: {message}")
+                print(f"[Monitor] [WARN] Quarantine failed: {message}")
                 file_info["quarantined"] = False
                 file_info["quarantine_error"] = message
         
@@ -134,6 +160,30 @@ class RansomwareEventHandler(FileSystemEventHandler):
         
         # Update results.json
         self._update_results_file(file_info)
+
+    def _handle_critical_threat(self, file_path: Path, threat_type: str):
+        """Immediate response to high-confidence threats (e.g. Canary)"""
+        file_info = {
+            "filename": file_path.name,
+            "full_path": str(file_path),
+            "risk_score": 100,
+            "risk_level": "CRITICAL",
+            "action_taken": threat_type,
+            "blocked": True,
+            "findings": [{"description": f"Critical Early Stage Detection: {threat_type}", "severity": 100}]
+        }
+        
+        # Kill everything in the directory
+        self._kill_processes_in_directory(str(file_path.parent))
+        
+        # Quarantine if possible
+        quarantine_file(file_path)
+        
+        file_info["quarantined"] = True
+        file_info["process_killed"] = True
+        
+        self._update_results_file(file_info)
+
 
     def _kill_processes_in_directory(self, directory: str):
         """
@@ -166,9 +216,9 @@ class RansomwareEventHandler(FileSystemEventHandler):
                 continue
         
         if killed_any:
-            print(f"[Monitor] ✅ Terminated processes in ransomware activity directory")
+            print(f"[Monitor] [OK] Terminated processes in ransomware activity directory")
         else:
-            print(f"[Monitor] ⚠️ No processes found to kill in directory")
+            print(f"[Monitor] [WARN] No processes found to kill in directory")
 
     def _update_results_file(self, new_entry):
         with self.lock:
@@ -200,7 +250,7 @@ class RansomwareEventHandler(FileSystemEventHandler):
             # Check if new file has ransomware extension
             ransomware_exts = ['.encrypted', '.locked', '.enc', '.ransom', '.crypto', '.key']
             if file_path.suffix.lower() in ransomware_exts:
-                print(f"[Monitor] 🚨 NEW RANSOMWARE FILE DETECTED: {file_path}")
+                print(f"[Monitor] [ALERT] NEW RANSOMWARE FILE DETECTED: {file_path}")
                 # Immediately process this file
                 self._process_file(file_path)
             else:
@@ -215,7 +265,7 @@ class RansomwareEventHandler(FileSystemEventHandler):
         """Handle file deletion events - track for potential ransomware"""
         if not event.is_directory:
             self._remove_from_results(Path(event.src_path))
-            print(f"[Monitor] ⚠️ File deleted: {event.src_path}")
+            print(f"[Monitor] [WARN] File deleted: {event.src_path}")
 
     def on_moved(self, event):
         """Handle file move/rename events - could be ransomware changing file extensions"""
@@ -225,7 +275,7 @@ class RansomwareEventHandler(FileSystemEventHandler):
             # Remove old location from results
             self._remove_from_results(Path(event.src_path))
             
-            print(f"[Monitor] ⚠️ File renamed/moved: {event.src_path} -> {event.dest_path}")
+            print(f"[Monitor] [WARN] File renamed/moved: {event.src_path} -> {event.dest_path}")
 
     def _remove_from_results(self, file_path):
         with self.lock:

@@ -1,39 +1,30 @@
 import shutil
 import time
 import os
+import json
+import base64
 from pathlib import Path
 from typing import Optional, Tuple
 from .process_killer import kill_ransomware_processes, get_process_using_file
 
-# Quarantine folder (outside watched directories to avoid loops)
 QUARANTINE_DIR = Path("./quarantine")
 QUARANTINE_DIR.mkdir(exist_ok=True)
 
-# Metadata file for quarantine records
 QUARANTINE_METADATA = QUARANTINE_DIR / "quarantine_metadata.json"
 
+ENCRYPTION_KEY = b"ReconWare_Qarantine_Secure_2026"
+
+def _xor_encrypt(data: bytes, key: bytes) -> bytes:
+    """Encrypt data using XOR cipher"""
+    return bytes([b ^ key[i % len(key)] for i, b in enumerate(data)])
 
 def quarantine_file(file_path: Path, max_retries: int = 3, retry_delay: float = 0.5) -> Tuple[bool, str]:
-    """
-    Move a file to quarantine and make it read-only.
-    If file is locked by a process, attempts to kill the process first.
-    
-    Args:
-        file_path: Path to the file to quarantine
-        max_retries: Maximum number of retries if file is locked
-        retry_delay: Delay between retries in seconds
-    
-    Returns:
-        Tuple of (success: bool, message: str)
-    """
-    # Validate path
     if not file_path.exists():
         return False, f"File does not exist: {file_path}"
     
     if not file_path.is_file():
         return False, f"Path is not a file: {file_path}"
     
-    # Check if file is being used by any process
     processes = get_process_using_file(str(file_path))
     
     if processes:
@@ -41,39 +32,47 @@ def quarantine_file(file_path: Path, max_retries: int = 3, retry_delay: float = 
         for proc in processes:
             print(f"  - PID {proc['pid']}: {proc['name']} ({proc['cmdline'][:50]}...)")
         
-        # Try to kill processes using the file
         success, killed_pids, message = kill_ransomware_processes(str(file_path))
         
         if success:
             print(f"[Quarantine] Killed processes: {killed_pids}")
-            # Wait a bit for processes to fully terminate
             time.sleep(0.5)
         else:
             print(f"[Quarantine] Could not kill processes: {message}")
     
-    # Try to quarantine with retries for locked files
     for attempt in range(max_retries):
         try:
-            # Generate unique destination path
             dest = QUARANTINE_DIR / file_path.name
             counter = 1
             while dest.exists():
                 dest = QUARANTINE_DIR / f"{file_path.stem}_{counter}{file_path.suffix}"
                 counter += 1
             
-            # Attempt to move the file
-            shutil.move(str(file_path), str(dest))
+            # Read original file content
+            with open(file_path, 'rb') as f:
+                original_data = f.read()
             
-            # Make the file read-only
-            dest.chmod(0o400)
+            # Encrypt the file content
+            encrypted_data = _xor_encrypt(original_data, ENCRYPTION_KEY)
             
-            # Log the quarantine
-            _log_quarantine(file_path, dest)
+            # Write encrypted content to quarantine with .quar extension
+            encrypted_dest = QUARANTINE_DIR / f"{dest.stem}.quar"
+            counter = 1
+            while encrypted_dest.exists():
+                encrypted_dest = QUARANTINE_DIR / f"{dest.stem}_{counter}.quar"
+                counter += 1
             
-            return True, f"Successfully quarantined to: {dest}"
+            with open(encrypted_dest, 'wb') as f:
+                f.write(encrypted_data)
+            
+            # Delete original file
+            file_path.unlink()
+            
+            _log_quarantine(file_path, encrypted_dest)
+            
+            return True, f"Successfully quarantined and encrypted to: {encrypted_dest}"
             
         except PermissionError as e:
-            # File is still locked
             if attempt < max_retries - 1:
                 print(f"[Quarantine] File locked, retrying ({attempt + 1}/{max_retries})...")
                 time.sleep(retry_delay)
@@ -88,30 +87,32 @@ def quarantine_file(file_path: Path, max_retries: int = 3, retry_delay: float = 
 
 
 def restore_file(quarantine_name: str, destination: Path) -> Tuple[bool, str]:
-    """
-    Restore a file from quarantine to its original location.
-    
-    Args:
-        quarantine_name: Name of the quarantined file
-        destination: Destination path for restoration
-    
-    Returns:
-        Tuple of (success: bool, message: str)
-    """
     quarantine_path = QUARANTINE_DIR / quarantine_name
     
     if not quarantine_path.exists():
         return False, f"Quarantined file not found: {quarantine_name}"
     
     try:
+        # Read encrypted content
+        with open(quarantine_path, 'rb') as f:
+            encrypted_data = f.read()
+        
+        # Decrypt content
+        decrypted_data = _xor_encrypt(encrypted_data, ENCRYPTION_KEY)
+        
         # Ensure destination directory exists
         destination.parent.mkdir(parents=True, exist_ok=True)
         
-        # Move file back
-        shutil.move(str(quarantine_path), str(destination))
+        # If destination exists, remove it first
+        if destination.exists():
+            destination.unlink()
         
-        # Restore original permissions (read-write)
-        destination.chmod(0o644)
+        # Write decrypted content
+        with open(destination, 'wb') as f:
+            f.write(decrypted_data)
+        
+        # Remove encrypted quarantine file
+        quarantine_path.unlink()
         
         return True, f"Successfully restored to: {destination}"
         
@@ -120,19 +121,13 @@ def restore_file(quarantine_name: str, destination: Path) -> Tuple[bool, str]:
 
 
 def list_quarantined_files() -> list:
-    """
-    List all files in quarantine.
-    
-    Returns:
-        List of quarantined file information dictionaries
-    """
     files = []
     
     if not QUARANTINE_DIR.exists():
         return files
     
     for f in QUARANTINE_DIR.iterdir():
-        if f.is_file() and f.name != "quarantine_metadata.json":
+        if f.is_file() and f.suffix == '.quar':
             stat = f.stat()
             files.append({
                 "name": f.name,
@@ -145,15 +140,10 @@ def list_quarantined_files() -> list:
 
 
 def _log_quarantine(original_path: Path, quarantine_path: Path):
-    """
-    Log quarantine information to metadata file.
-    """
-    import json
     from datetime import datetime
     
     metadata_file = QUARANTINE_DIR / "quarantine_metadata.json"
     
-    # Load existing metadata
     try:
         if metadata_file.exists():
             with open(metadata_file, 'r') as f:
@@ -163,17 +153,17 @@ def _log_quarantine(original_path: Path, quarantine_path: Path):
     except:
         metadata = {"quarantined_files": []}
     
-    # Add new entry
     entry = {
         "original_path": str(original_path),
         "quarantine_path": str(quarantine_path),
         "timestamp": datetime.now().isoformat(),
-        "filename": original_path.name
+        "filename": original_path.name,
+        "file_type": original_path.suffix.lower(),
+        "encrypted": True
     }
     
     metadata["quarantined_files"].append(entry)
     
-    # Save metadata
     try:
         with open(metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
@@ -182,15 +172,6 @@ def _log_quarantine(original_path: Path, quarantine_path: Path):
 
 
 def delete_quarantined_file(quarantine_name: str) -> Tuple[bool, str]:
-    """
-    Permanently delete a quarantined file.
-    
-    Args:
-        quarantine_name: Name of the quarantined file
-    
-    Returns:
-        Tuple of (success: bool, message: str)
-    """
     quarantine_path = QUARANTINE_DIR / quarantine_name
     
     if not quarantine_path.exists():
@@ -202,3 +183,42 @@ def delete_quarantined_file(quarantine_name: str) -> Tuple[bool, str]:
     except Exception as e:
         return False, f"Delete failed: {str(e)}"
 
+
+def get_quarantine_stats() -> dict:
+    """Get statistics about quarantined files"""
+    metadata_file = QUARANTINE_DIR / "quarantine_metadata.json"
+    
+    stats = {
+        "total_files": 0,
+        "by_type": {},
+        "by_day": {},
+        "total_size": 0
+    }
+    
+    if metadata_file.exists():
+        try:
+            with open(metadata_file, 'r') as f:
+                metadata = json.load(f)
+            
+            files = metadata.get("quarantined_files", [])
+            stats["total_files"] = len(files)
+            
+            for file_entry in files:
+                file_type = file_entry.get("file_type", "unknown")
+                stats["by_type"][file_type] = stats["by_type"].get(file_type, 0) + 1
+                
+                timestamp = file_entry.get("timestamp", "")
+                if timestamp:
+                    day = timestamp.split("T")[0]
+                    stats["by_day"][day] = stats["by_day"].get(day, 0) + 1
+            
+            quarantine_dir = QUARANTINE_DIR
+            if quarantine_dir.exists():
+                for f in quarantine_dir.iterdir():
+                    if f.is_file() and f.suffix == '.quar':
+                        stats["total_size"] += f.stat().st_size
+                        
+        except Exception as e:
+            print(f"[Quarantine] Error reading stats: {e}")
+    
+    return stats
